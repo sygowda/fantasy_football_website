@@ -1,35 +1,66 @@
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/router'
-import { supabase } from '../lib/supabase'
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import { supabase } from '../lib/supabase';
 
-export default function ProtectedRoute({ children, adminOnly = false }) {
-  const [loading, setLoading] = useState(true)
-  const [isAllowed, setIsAllowed] = useState(false)
-  const router = useRouter()
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  adminOnly?: boolean;
+}
+
+export default function ProtectedRoute({ children, adminOnly = false }: ProtectedRouteProps) {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/login')
-        return
-      }
-
-      if (adminOnly) {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user.email !== 'admin@example.com') {
-          router.push('/')
-          return
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          router.push('/login');
+          return;
         }
+
+        setIsAuthenticated(true);
+
+        if (adminOnly) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', session.user.id)
+            .single();
+
+          if (!profile?.is_admin) {
+            router.push('/');
+            return;
+          }
+
+          setIsAdmin(true);
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        router.push('/login');
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      setIsAllowed(true)
-      setLoading(false)
-    }
+    checkAuth();
+  }, [router, adminOnly]);
 
-    checkAuth()
-  }, [])
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
-  if (loading) return <p>Loading...</p>
-  return isAllowed ? children : null
-}
+  if (!isAuthenticated || (adminOnly && !isAdmin)) {
+    return null;
+  }
+
+  return <>{children}</>;
+} 
